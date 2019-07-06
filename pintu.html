@@ -1,10 +1,12 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"/>
+    <title>拼图游戏</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="./favicon.ico" />
 
     <style>
+      /* 让html和body充满全部空间 */
       html,
       body {
         margin: 0;
@@ -12,6 +14,7 @@
         width: 100%;
         height: 100%;
       }
+      /*顶部按钮群*/
       .header {
         height: 10%;
         width: 100%;
@@ -20,6 +23,7 @@
         justify-content: center;
         overflow: hidden;
       }
+      /*游戏主体部分，包括header和board两部分*/
       .main {
         padding: 0;
         margin: 0;
@@ -28,6 +32,7 @@
         display: block;
         background: #333333;
       }
+      /*每个数字卡片*/
       .card {
         border-width: 2px;
         font-size: 50px;
@@ -35,16 +40,9 @@
         color: white;
         text-align: center;
         background: #ae8152;
+        user-select: none;
       }
 
-      .header button,
-      #config button,
-      #share button,
-      #cover button {
-        font-size: 25px;
-        font-weight: 600;
-        font-family: Consolas;
-      }
       .header button {
         height: 100%;
         width: 100%;
@@ -60,6 +58,7 @@
       .board table {
         background: white;
       }
+      /*三个对话框*/
       #cover,
       #config,
       #share {
@@ -78,13 +77,14 @@
       }
       #config input,
       #share input {
-        font-size: 25px;
         font-weight: 600;
         font-family: Consolas;
       }
+      /*对话框底部的按钮*/
       .footer-button {
         padding-top: 30px;
       }
+      /*游戏面板中的toast*/
       #toast {
         background: #333333;
         color: white;
@@ -99,7 +99,7 @@
     </style>
   </head>
   <body>
-    <!-- “你赢了”消息遮罩层 -->
+    <!-- 对话框：“你赢了”消息遮罩层 -->
     <div id="cover">
       <div>你赢了！</div>
       <div class="footer-button">
@@ -107,16 +107,17 @@
         <button onclick="event.preventDefault();startAnotherGame();ui.display('#cover','none')">新游戏</button>
       </div>
     </div>
-    <!-- 设置 -->
+    <!-- 对话框：设置 -->
     <div id="config">
       <div>宽度： <input type="number" min="1" max="15" value="2" id="xsize" /></div>
       <div>高度：<input type="number" min="1" max="15" value="3" id="ysize" /></div>
-      <div>自动时间间隔(<span id="autoPlayIntervalDescription"></span>s)：<input type="range" min="0.1" max="5" step="0.1" value="1" id="autoPlayInterval" onchange="document.querySelector('#autoPlayIntervalDescription').innerHTML=document.querySelector('#autoPlayInterval').value"/></div>
+      <div>自动时间间隔(<span id="autoPlayIntervalDescription"></span>s)：<input type="range" min="0.1" max="5" step="0.1" value="1" id="autoPlayInterval" onchange="document.querySelector('#autoPlayIntervalDescription').innerHTML=document.querySelector('#autoPlayInterval').value" /></div>
       <div class="footer-button">
         <button onclick="ui.display('#config','none')">取消</button>
         <button onclick="submitConfig();ui.display('#config','none')" autofocus>提交</button>
       </div>
     </div>
+    <!-- 对话框：分享 -->
     <div id="share">
       <!-- 隐藏的一个span，用来记录URL -->
       <input id="urlSpan" type="url" readonly />
@@ -125,7 +126,7 @@
         <button onclick="copyShareUrl()">复制链接</button>
       </div>
     </div>
-    <!-- 主要游戏区 -->
+    <!-- 主要游戏区main：包括header和board两部分 -->
     <div class="main">
       <div class="header">
         <button onclick=" help()" id="autoPlayButton">自动</button>
@@ -135,6 +136,7 @@
         <button onclick=" ui.display('#config','flex');">设置</button>
       </div>
       <div class="board">
+        <!-- 消息框 -->
         <div id="toast"></div>
         <table id="table"></table>
       </div>
@@ -285,6 +287,27 @@
           }
         }
         return true
+      },
+      /**
+       * 计算两个向量之间的夹角(0~pi)
+       * 如果大于180度，会取360-该角度，这个工作是由acos完成的
+       * */
+      get_angle(x1, y1, x2, y2) {
+        var cos = (x1 * x2 + y1 * y2) / Math.hypot(x1, y1) / Math.hypot(x2, y2)
+        return Math.acos(cos)
+      },
+      /**
+       * 计算向量之间的余弦距离确定最佳方向，这里假定与四个方向夹角小于30度
+       * 必然只有一个答案，找到后立即返回即可
+       * */
+      get_direction(dx, dy) {
+        for (var i = 0; i < directions.length; i++) {
+          var angle = this.get_angle(directions[i][0], directions[i][1], dx, dy)
+          if (Math.abs(angle) < Math.PI / 6) {
+            return i
+          }
+        }
+        return -1
       }
     }
     const solve = (function() {
@@ -450,6 +473,19 @@
       return solve
     })()
     const ui = {
+      /**根据事件获取坐标，兼容鼠标和触摸两种事件*/
+      getMousePosition(event) {
+        if (event.type.startsWith("mouse")) {
+          return { x: event.x, y: event.y }
+        } else if (event.type.startsWith("touch")) {
+          return {
+            x: event.changedTouches[0].clientX,
+            y: event.changedTouches[0].clientY
+          }
+        } else {
+          console.log("baga==========")
+        }
+      },
       fadeOut(ele) {
         //渐渐隐藏一个元素
         if (!ele.style.opacity) {
@@ -493,15 +529,15 @@
         ui.fadeOut(ele)
       }, 3000)
     }
+    //关闭遮罩层
     function closeCover() {
-      //关闭遮罩层
       var cover = document.querySelector("#cover")
       if (cover.style.display == "flex") {
         cover.style.display = "none"
       }
     }
+    //开始新游戏，checkUrl表示是否从URL中加载游戏
     function newGame(checkUrl) {
-      //开始新游戏，checkUrl表示是否从URL中加载游戏
       const query = ui.getQuery()
       var xsize = document.getElementById("xsize").value
       var ysize = document.getElementById("ysize").value
@@ -522,6 +558,7 @@
       var a = util.random_pintu(xsize, ysize)
       return a
     }
+    //用户是否处于游戏状态，通过查看对话框是否存在来判断
     function isPlaying() {
       for (var i of ["#config", "#cover"]) {
         if (document.querySelector(i).style.display == "flex") {
@@ -530,7 +567,7 @@
       }
       return true
     }
-
+    //移动方向
     function move(directionIndex) {
       var [spaceX, spaceY] = util.get_space(a)
       var x = spaceX - directions[directionIndex][0],
@@ -543,29 +580,8 @@
         }
       }
     }
-    function keyDown(e) {
-      var config = document.querySelector("#config")
-      var cover = document.querySelector("#cover")
-      if (config.style.display == "flex") {
-        if (event.keyCode == 13) {
-          submitConfig()
-          config.style.display = "none"
-        }
-      } else if (cover.style.display == "flex") {
-        if (event.keyCode == 13) {
-          startAnotherGame()
-          cover.style.display = "none"
-        }
-      } else {
-        var keyCodeIndex = [39, 37, 38, 40].indexOf(e.keyCode)
-        if (keyCodeIndex == -1) {
-          return
-        } else {
-          move(keyCodeIndex)
-        }
-      }
-    }
 
+    //根据游戏数据重绘棋盘
     function draw(a) {
       var a = util.flat(a)
       for (var i = 0; i < a.length; i++) {
@@ -577,8 +593,9 @@
     function init(a) {
       var xsize = a.length,
         ysize = a[0].length
-      var w = (document.documentElement.clientHeight * 0.95) / xsize
-      var h = (document.documentElement.clientWidth * 0.95) / ysize
+      var w = (document.documentElement.clientHeight * 0.9) / xsize
+      //高度需要空出来一个header（10%）
+      var h = (document.documentElement.clientWidth * 0.9) / ysize
       w = h = Math.min(w, h)
       var html = ""
       for (var i = 0; i < xsize; i++) {
@@ -590,6 +607,7 @@
       }
       table.innerHTML = html
     }
+    //是否处于自动状态
     function autoPlay(op) {
       var autoPlayButton = document.querySelector("#autoPlayButton")
       if (autoPlayButton.innerHTML == "自动") {
@@ -627,6 +645,10 @@
       document.querySelector("#config").style.display = "none"
       var xsize = document.querySelector("#xsize").value
       var ysize = document.querySelector("#ysize").value
+      if ((xsize <= 2 && ysize <= 2) || xsize <= 1 || ysize <= 1) {
+        toast("你设置的也太小了吧")
+        return
+      }
       var autoPlayInterval = document.querySelector("#autoPlayInterval").value
       localStorage.pintuConfig = JSON.stringify({
         xsize,
@@ -650,6 +672,7 @@
         document.querySelector("#ysize").value = parseInt(query["ysize"])
       }
     }
+    //停止自动演示
     function resetAutoplayState() {
       var button = document.querySelector("#autoPlayButton")
       button.innerHTML = "自动"
@@ -657,21 +680,22 @@
       clearTimeout(autoPlayTimeout)
       autoPlayTimeout = -1
     }
+    //重玩当前游戏
     function replay() {
-      //重玩当前游戏
       resetAutoplayState()
       a = util.copy(originGame)
       init(a)
       draw(a)
     }
+    //把分享链接复制到剪贴板
     function copyShareUrl() {
       urlSpan.select()
       document.execCommand("Copy", false, null)
       toast("已复制到剪贴板！")
       ui.display("#share", "none")
     }
+    //分享游戏
     function share() {
-      //分享游戏
       var urlSpan = document.querySelector("#urlSpan")
       var link = document.createElement("a")
       var xsize = document.querySelector("#xsize").value
@@ -680,16 +704,83 @@
       urlSpan.value = link.href
       ui.display("#share", "flex")
     }
+    //开始新游戏
     function startAnotherGame() {
-      //开始新游戏
       resetAutoplayState()
       a = newGame(false)
       originGame = util.copy(a)
       init(a)
       draw(a)
     }
+    function keyDown(e) {
+      var config = document.querySelector("#config")
+      var cover = document.querySelector("#cover")
+      if (config.style.display == "flex") {
+        //在“设置”对话框下按下enter键
+        if (event.keyCode == 13) {
+          submitConfig()
+          config.style.display = "none"
+        }
+      } else if (cover.style.display == "flex") {
+        //在“遮罩”对话框下按下enter键
+        if (event.keyCode == 13) {
+          startAnotherGame()
+          cover.style.display = "none"
+        }
+      } else {
+        var keyCodeIndex = [39, 37, 38, 40].indexOf(e.keyCode)
+        if (keyCodeIndex == -1) {
+          return
+        } else {
+          move(keyCodeIndex)
+        }
+      }
+    }
+
+    function bindEventListenerAccordingPlatform() {
+      if (/Android|webOS|iPhone|iPod|BlackBerry/i.test(navigator.userAgent)) {
+        document.querySelector("#table").addEventListener("touchstart", onMouseDown)
+        document.querySelector("#table").addEventListener("touchend", onMouseUp)
+        document.querySelector("#table").addEventListener("touchmove", onMouseMove)
+      } else {
+        document.querySelector("#table").onmousedown = onMouseDown
+        document.querySelector("#table").onmouseup = onMouseUp
+        document.querySelector("#table").onmousemove = onMouseMove
+      }
+    }
+    /** 鼠标按下*/
+    function onMouseDown(event) {
+      //如果不处于玩游戏状态，直接返回
+      if (!isPlaying()) return
+      event.preventDefault()
+      swipe = {
+        beginX: ui.getMousePosition(event).x,
+        beginY: ui.getMousePosition(event).y,
+        endX: ui.getMousePosition(event).x,
+        endY: ui.getMousePosition(event).y
+      }
+    }
+
+    /**鼠标移动事件*/
+    function onMouseMove(event) {
+      if (isPlaying() && swipe != null) {
+        swipe.endX = ui.getMousePosition(event).x
+        swipe.endY = ui.getMousePosition(event).y
+      }
+    }
+
+    /**鼠标抬起*/
+    function onMouseUp(event) {
+      event.preventDefault()
+      if (swipe == null) return
+      var ind = util.get_direction(swipe.endY - swipe.beginY, swipe.endX - swipe.beginX)
+      swipe = null
+      move(ind)
+    }
     var autoPlayTimeout = -1
+    var swipe = null //鼠标扫动事件，应包含beginX,beginY,endX,endY四个属性
     mounted()
+    bindEventListenerAccordingPlatform()
     var a = newGame(true)
     var originGame = util.copy(a) //用于重新玩
     init(a)
