@@ -1,0 +1,799 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>拼图游戏</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="./favicon.ico" />
+
+    <style>
+      /* 让html和body充满全部空间 */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+      }
+      /*顶部按钮群*/
+      .header {
+        height: 10%;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      /*游戏主体部分，包括header和board两部分*/
+      .main {
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: #333333;
+      }
+      /*每个数字卡片*/
+      .card {
+        border-width: 2px;
+        font-size: 50px;
+        font-weight: bold;
+        color: white;
+        text-align: center;
+        background: #ae8152;
+        user-select: none;
+      }
+
+      .header button {
+        height: 100%;
+        width: 100%;
+      }
+      .board {
+        width: 100%;
+        height: 90%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .board table {
+        background: white;
+      }
+      /*三个对话框*/
+      #cover,
+      #config,
+      #share {
+        opacity: 0.65;
+        background: #333333;
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        color: white;
+        font-size: 50px;
+        flex-direction: column;
+      }
+      #config input,
+      #share input {
+        font-weight: 600;
+        font-family: Consolas;
+      }
+      /*对话框底部的按钮*/
+      .footer-button {
+        padding-top: 30px;
+      }
+      /*游戏面板中的toast*/
+      #toast {
+        background: #333333;
+        color: white;
+        font-size: 25px;
+        padding: 30px;
+        border-radius: 10px;
+        opacity: 0.75;
+        position: absolute;
+        z-index: 100;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 对话框：“你赢了”消息遮罩层 -->
+    <div id="cover">
+      <div>你赢了！</div>
+      <div class="footer-button">
+        <button onclick="event.preventDefault();replay();ui.display('#cover','none')">重玩</button>
+        <button onclick="event.preventDefault();startAnotherGame();ui.display('#cover','none')">新游戏</button>
+      </div>
+    </div>
+    <!-- 对话框：设置 -->
+    <div id="config">
+      <div>宽度： <input type="number" min="1" max="15" value="2" id="xsize" /></div>
+      <div>高度：<input type="number" min="1" max="15" value="3" id="ysize" /></div>
+      <div>自动时间间隔(<span id="autoPlayIntervalDescription"></span>s)：<input type="range" min="0.1" max="5" step="0.1" value="1" id="autoPlayInterval" onchange="document.querySelector('#autoPlayIntervalDescription').innerHTML=document.querySelector('#autoPlayInterval').value" /></div>
+      <div class="footer-button">
+        <button onclick="ui.display('#config','none')">取消</button>
+        <button onclick="submitConfig();ui.display('#config','none')" autofocus>提交</button>
+      </div>
+    </div>
+    <!-- 对话框：分享 -->
+    <div id="share">
+      <!-- 隐藏的一个span，用来记录URL -->
+      <input id="urlSpan" type="url" readonly />
+      <div class="footer-button">
+        <button onclick=" ui.display('#share','none')">取消</button>
+        <button onclick="copyShareUrl()">复制链接</button>
+      </div>
+    </div>
+    <!-- 主要游戏区main：包括header和board两部分 -->
+    <div class="main">
+      <div class="header">
+        <button onclick=" help()" id="autoPlayButton">自动</button>
+        <button onclick=" replay();">重玩</button>
+        <button onclick=" startAnotherGame()">新游戏</button>
+        <button onclick="share()">分享</button>
+        <button onclick=" ui.display('#config','flex');">设置</button>
+      </div>
+      <div class="board">
+        <!-- 消息框 -->
+        <div id="toast"></div>
+        <table id="table"></table>
+      </div>
+    </div>
+  </body>
+  <script>
+    const directions = [[0, 1], [0, -1], [-1, 0], [1, 0]] //right,left,up,down
+    const util = {
+      //工具函数
+      copy(ar) {
+        //复制一份数组
+        var ans = new Array(ar.length)
+        for (var i = 0; i < ans.length; i++) {
+          if (ar[i] instanceof Array) {
+            ans[i] = this.copy(ar[i])
+          } else {
+            ans[i] = ar[i]
+          }
+        }
+        return ans
+      },
+      random_pintu(xsize, ysize) {
+        //工具函数，产生一个随机随机拼图
+        var a = this.get_array([xsize, ysize], 0)
+        //为确保有解，进行打乱
+        for (var i = 0; i < xsize; i++) {
+          for (var j = 0; j < ysize; j++) {
+            a[i][j] = (i * ysize + j + 1) % (xsize * ysize)
+          }
+        }
+        var space = [xsize - 1, ysize - 1]
+        for (var i = 0; i < xsize * ysize * 16; i++) {
+          var di = directions[Math.floor(Math.random() * 4)]
+          var [x, y] = [space[0] + di[0], space[1] + di[1]]
+          if (xsize > x && x >= 0 && y >= 0 && ysize > y) {
+            util.swap(a, [x, y], [space[0], space[1]])
+            space = [x, y]
+          }
+        }
+        return a
+      },
+      swap(a, p, q) {
+        //工具函数，交换二维数组中p，q两个位置的元素
+        var temp = a[p[0]][p[1]]
+        a[p[0]][p[1]] = a[q[0]][q[1]]
+        a[q[0]][q[1]] = temp
+      },
+      legal(ar, x, y) {
+        //工具函数，判断x,y是否合法
+        return ar.length > x && x >= 0 && y >= 0 && y < ar[0].length
+      },
+
+      get_array(shape, value) {
+        //工具函数，构造一个形状为shape，值为value的多维数组
+        if (!(shape instanceof Array)) {
+          throw new Error("'shape' should be a array ")
+        }
+        let a = new Array(shape[0])
+        for (var i = 0; i < shape[0]; i++) {
+          if (shape.length == 1) {
+            a[i] = value
+          } else {
+            a[i] = this.get_array(shape.slice(1), value)
+          }
+        }
+        return a
+      },
+      flat(a) {
+        //工具函数，把一个多维数组展平成一维数组
+        var ret = []
+        for (var i = 0; i < a.length; i++) {
+          if (a[i] instanceof Array) {
+            var subArray = this.flat(a[i])
+            for (var j of subArray) {
+              ret.push(j)
+            }
+          } else {
+            ret.push(a[i])
+          }
+        }
+        return ret
+      },
+      is_solvable(a) {
+        //工具函数，判断二维数组a是否可解
+        var reverse = this.get_reverse(util.flat(a))
+        var xsize = a.length,
+          ysize = a[0].length
+        if (ysize % 2 == 0) {
+          var space = util.get_space(a)
+          reverse ^= (xsize - 1 - space[0]) & 1
+        }
+        return reverse % 2 == 0
+      },
+      array_eq(a, b) {
+        //工具函数，判断两个多维数组是否完全相等
+        if (a.length != b.length) {
+          throw new Error("length not equal")
+        }
+        for (var i = 0; i < a.length; i++) {
+          if (a[i] instanceof Array) {
+            if (b[i] instanceof Array) {
+              if (!array_eq(a[i], b[i])) {
+                return false
+              }
+            } else {
+              return false
+            }
+          } else {
+            if (a[i] != b[i]) {
+              return false
+            }
+          }
+        }
+        return true
+      },
+      get_space(a) {
+        for (var i = 0; i < a.length; i++) {
+          for (var j = 0; j < a[i].length; j++) {
+            if (a[i][j] == 0) {
+              return [i, j]
+            }
+          }
+        }
+      },
+      get_reverse(a) {
+        //求一个一维序列的逆序数，此处可以优化
+        var ans = 0
+        for (var i = 0; i < a.length; i++) {
+          if (a[i] != 0) {
+            for (var j = i + 1; j < a.length; j++) {
+              if (a[j] != 0) {
+                if (a[i] > a[j]) {
+                  ans += 1
+                }
+              }
+            }
+          }
+        }
+        return ans
+      },
+      over(ar) {
+        //工具函数，判断二维数组ar是否是游戏终止状态
+        for (var i = 0; i < ar.length; i++) {
+          for (var j = 0; j < ar[0].length; j++) {
+            if (ar[i][j] != (i * ar[0].length + j + 1) % (ar.length * ar[0].length)) {
+              return false
+            }
+          }
+        }
+        return true
+      },
+      /**
+       * 计算两个向量之间的夹角(0~pi)
+       * 如果大于180度，会取360-该角度，这个工作是由acos完成的
+       * */
+      get_angle(x1, y1, x2, y2) {
+        var cos = (x1 * x2 + y1 * y2) / Math.hypot(x1, y1) / Math.hypot(x2, y2)
+        return Math.acos(cos)
+      },
+      /**
+       * 计算向量之间的余弦距离确定最佳方向，这里假定与四个方向夹角小于30度
+       * 必然只有一个答案，找到后立即返回即可
+       * */
+      get_direction(dx, dy) {
+        for (var i = 0; i < directions.length; i++) {
+          var angle = this.get_angle(directions[i][0], directions[i][1], dx, dy)
+          if (Math.abs(angle) < Math.PI / 6) {
+            return i
+          }
+        }
+        return -1
+      }
+    }
+    const solve = (function() {
+      var xsize = 0
+      var ysize = 0
+      var a = null //拼图数组
+      var where = null //拼图位置信息
+      var ready_flag = null //标识此块是否拼好，若已经拼好就不能再动了
+      var ans_op = "" //答案
+      var gold_op = [0, 2, 1, 3, 1, 2, 0, 0, 3, 1] //黄金操作，此法可解决任意2行N列的拼图
+
+      function op_to_char(op) {
+        //操作转化为可读性较好的文字
+        for (var i = 0; i < directions.length; i++) {
+          if (directions[i][0] == op[0] && directions[i][1] == op[1]) {
+            return "左右下上"[i]
+          }
+        }
+        throw new Error("imposible to reach here")
+      }
+      function swap_neibor(src, des) {
+        //交换相邻两个位置的元素，需要更新索引
+        if (a[src[0]][src[1]] != 0) {
+          var temp = src
+          src = des
+          des = temp
+        }
+        ans_op += op_to_char([des[0] - src[0], des[1] - src[1]])
+        util.swap(a, src, des)
+        where[a[src[0]][src[1]]] = [src[0], src[1]]
+        where[a[des[0]][des[1]]] = [des[0], des[1]]
+      }
+      function where_is(x, y) {
+        //应该在x,y处的那个小块现在在哪里
+        return where[(x * ysize + y + 1) % (xsize * ysize)]
+      }
+      function init_pos() {
+        //初始化元素索引
+        for (var i = 0; i < xsize; i++) {
+          for (var j = 0; j < ysize; j++) {
+            where[a[i][j]] = [i, j]
+          }
+        }
+      }
+
+      function get_path(fx, fy, tx, ty, still_x, still_y) {
+        //求一条从f到t的路径并且不能经过still
+        var distance = util.get_array([xsize, ysize], -1) //距离矩阵
+        var q = [] //广度优先搜索队列
+        q.push([fx, fy])
+        distance[fx][fy] = 0
+        var last_pos = util.get_array([xsize, ysize], 0) //记录搜索路径
+        function bfs() {
+          while (q.length > 0) {
+            var now = q.shift()
+            for (var i of directions) {
+              var [xx, yy] = [now[0] + i[0], now[1] + i[1]]
+              if (util.legal(a, xx, yy) && distance[xx][yy] == -1 && !(xx == still_x && yy == still_y) && ready_flag[xx][yy] == false) {
+                q.push([xx, yy])
+                distance[xx][yy] = distance[now[0]][now[1]] + 1
+                last_pos[xx][yy] = now
+                if (xx == tx && yy == ty) {
+                  return
+                }
+              }
+            }
+          }
+        }
+        bfs()
+        var path = []
+        var [i, j] = [tx, ty]
+        while (true) {
+          path.push([i, j])
+          if (i == fx && j == fy) {
+            break
+          }
+          var [i, j] = last_pos[i][j]
+        }
+        return path.reverse()
+      }
+      function move_space_to(x, y, still_x, still_y) {
+        //在保持still_x和still_y静止的条件下把空格移动到x,y
+        var [space_x, space_y] = where_is(xsize - 1, ysize - 1)
+        path = get_path(space_x, space_y, x, y, still_x, still_y)
+        for (var i = 1; i < path.length; i++) {
+          swap_neibor(path[i], path[i - 1])
+        }
+      }
+      function move(src_x, src_y, des_x, des_y) {
+        if (arguments.length != 4) {
+          throw new Error("move error")
+        }
+        //把任意一个小块，经过一系列操作，从src移动到des
+        var path = get_path(src_x, src_y, des_x, des_y, null, null)
+        for (var i = 1; i < path.length; i++) {
+          move_space_to(path[i][0], path[i][1], path[i - 1][0], path[i - 1][1])
+          swap_neibor(path[i], path[i - 1])
+        }
+      }
+      function do_op(op_list) {
+        //执行一个操作序列
+        var [space_x, space_y] = where_is(xsize - 1, ysize - 1)
+        for (var i of op_list) {
+          var x = space_x - directions[i][0]
+          var y = space_y - directions[i][1]
+          swap_neibor([x, y], [space_x, space_y])
+          var [space_x, space_y] = [x, y]
+        }
+      }
+
+      function go() {
+        if (!util.is_solvable(this.a)) {
+          console.log("unsolvable")
+          return
+        }
+        for (var i = 0; i < xsize - 2; i++) {
+          for (var j = 0; j < ysize - 2; j++) {
+            move(...where_is(i, j), i, j)
+            ready_flag[i][j] = true
+          }
+        }
+        //最后两行
+        for (var i = 0; i < ysize - 2; i++) {
+          move(...where_is(xsize - 1, i), xsize - 1, i)
+          if (util.array_eq(where_is(xsize - 1, ysize - 1), [xsize - 2, i])) {
+            swap_neibor([xsize - 2, i], [xsize - 2, i + 1])
+          }
+          if (util.array_eq(where_is(xsize - 2, i), [xsize - 2, i])) continue
+          move(...where_is(xsize - 2, i), xsize - 2, i + 2)
+          move_space_to(xsize - 2, i + 1, xsize - 2, i + 2)
+          do_op(gold_op)
+        }
+        //最后两列，与最后两行对称
+        for (var i = 0; i < xsize - 2; i++) {
+          move(...where_is(i, ysize - 2), i, ysize - 2)
+          last = ans_op
+          //如果空格正好在右边，那么把下面的数字移动上来
+          if (util.array_eq(where_is(xsize - 1, ysize - 1), [i, ysize - 1])) {
+            swap_neibor([i, ysize - 1], [i + 1, ysize - 1])
+          }
+          if (util.array_eq(where_is(i, ysize - 1), [i, ysize - 1])) continue
+          move(...where_is(i, ysize - 1), i + 2, ysize - 1)
+          last = ans_op
+          move_space_to(i + 1, ysize - 1, i + 2, ysize - 1)
+          last = ans_op
+          var gold_op_vertical = gold_op.map(x => [3, 2, 0, 1][x]) //gold_op顺时针旋转90度，用于解决N行2列的拼图
+          do_op(gold_op_vertical)
+          last = ans_op
+        }
+        //最后还有右下角2*2小正方形
+        move(...where_is(xsize - 2, ysize - 2), xsize - 2, ysize - 2)
+        move(...where_is(xsize - 2, ysize - 1), xsize - 2, ysize - 1)
+        move(...where_is(xsize - 1, ysize - 2), xsize - 1, ysize - 2)
+      }
+
+      function solve(ar) {
+        //ar是一个二维数组，这是入口函数
+        a = util.copy(ar)
+        xsize = a.length
+        ysize = a[0].length
+        where = util.get_array([xsize, ysize, 2], -1)
+        init_pos()
+        ready_flag = util.get_array([xsize, ysize], 0)
+        ans_op = ""
+        go()
+        return ans_op
+      }
+      return solve
+    })()
+    const ui = {
+      /**根据事件获取坐标，兼容鼠标和触摸两种事件*/
+      getMousePosition(event) {
+        if (event.type.startsWith("mouse")) {
+          return { x: event.x, y: event.y }
+        } else if (event.type.startsWith("touch")) {
+          return {
+            x: event.changedTouches[0].clientX,
+            y: event.changedTouches[0].clientY
+          }
+        } else {
+          console.log("baga==========")
+        }
+      },
+      fadeOut(ele) {
+        //渐渐隐藏一个元素
+        if (!ele.style.opacity) {
+          ele.style.display = "none"
+          return
+        }
+        setTimeout(() => {
+          var opacity = parseFloat(ele.style.opacity)
+          opacity *= 0.9
+          if (opacity < 0.1) {
+            ele.style.display = "none"
+          } else {
+            ele.style.opacity = opacity
+            ui.fadeOut(ele)
+          }
+        }, 50)
+      },
+      display(ele, display) {
+        document.querySelector(ele).style.display = display
+      },
+      getQuery() {
+        //解析URL
+        var kvs = location.search
+          .substring(1)
+          .split("&")
+          .map(kv => kv.split("="))
+        var query = {}
+        for (var kv of kvs) {
+          query[kv[0]] = kv[1]
+        }
+        return query
+      }
+    }
+
+    function toast(text) {
+      var ele = document.querySelector("#toast")
+      ele.innerHTML = text
+      ele.style.display = "block"
+      ele.style.opacity = 0.75
+      setTimeout(() => {
+        ui.fadeOut(ele)
+      }, 3000)
+    }
+    //关闭遮罩层
+    function closeCover() {
+      var cover = document.querySelector("#cover")
+      if (cover.style.display == "flex") {
+        cover.style.display = "none"
+      }
+    }
+    //开始新游戏，checkUrl表示是否从URL中加载游戏
+    function newGame(checkUrl) {
+      const query = ui.getQuery()
+      var xsize = document.getElementById("xsize").value
+      var ysize = document.getElementById("ysize").value
+      if (checkUrl && query["a"]) {
+        var a = query["a"].split(",")
+        if (a.length == xsize * ysize) {
+          var ans = util.get_array([xsize, ysize], 0)
+          var k = 0
+          a = a.map(x => parseInt(x))
+          for (var i = 0; i < xsize; i++) {
+            for (var j = 0; j < ysize; j++) {
+              ans[i][j] = a[k++]
+            }
+          }
+          return ans
+        }
+      }
+      var a = util.random_pintu(xsize, ysize)
+      return a
+    }
+    //用户是否处于游戏状态，通过查看对话框是否存在来判断
+    function isPlaying() {
+      for (var i of ["#config", "#cover"]) {
+        if (document.querySelector(i).style.display == "flex") {
+          return false
+        }
+      }
+      return true
+    }
+    //移动方向
+    function move(directionIndex) {
+      var [spaceX, spaceY] = util.get_space(a)
+      var x = spaceX - directions[directionIndex][0],
+        y = spaceY - directions[directionIndex][1]
+      if (x >= 0 && y >= 0 && x < a.length && y < a[0].length) {
+        util.swap(a, [x, y], [spaceX, spaceY])
+        draw(a)
+        if (util.over(a)) {
+          document.querySelector("#cover").style.display = "flex"
+        }
+      }
+    }
+
+    //根据游戏数据重绘棋盘
+    function draw(a) {
+      var a = util.flat(a)
+      for (var i = 0; i < a.length; i++) {
+        var img = document.getElementById("pic" + i)
+        img.innerHTML = a[i] == 0 ? "" : a[i]
+      }
+    }
+
+    function init(a) {
+      var xsize = a.length,
+        ysize = a[0].length
+      var w = (document.documentElement.clientHeight * 0.9) / xsize
+      //高度需要空出来一个header（10%）
+      var h = (document.documentElement.clientWidth * 0.9) / ysize
+      w = h = Math.min(w, h)
+      var html = ""
+      for (var i = 0; i < xsize; i++) {
+        html += "<tr>"
+        for (var j = 0; j < ysize; j++) {
+          html += "<td width=" + Math.floor(w) + " height=" + Math.floor(h) + "  class='card' id=pic" + (i * ysize + j) + "></td>"
+        }
+        html += "</tr>"
+      }
+      table.innerHTML = html
+    }
+    //是否处于自动状态
+    function autoPlay(op) {
+      var autoPlayButton = document.querySelector("#autoPlayButton")
+      if (autoPlayButton.innerHTML == "自动") {
+        //不再是自动状态了
+        return
+      }
+      var interval = document.querySelector("#autoPlayInterval").value * 1000
+      autoPlayTimeout = setTimeout(() => {
+        var nowOp = op[0]
+        var nextOp = op.substring(1)
+        move("右左上下".indexOf(nowOp))
+        if (nextOp.length > 0) {
+          autoPlay(nextOp)
+        } else {
+          autoPlayButton.innerHTML = "自动"
+        }
+      }, interval)
+    }
+    function help() {
+      var autoPlayButton = document.querySelector("#autoPlayButton")
+      if (autoPlayButton.innerHTML == "自动") {
+        autoPlayButton.innerHTML = "停止"
+        autoPlayButton.style.color = "red"
+        var op = solve(a)
+        console.log(op)
+        autoPlayTimeout = setTimeout(() => {
+          autoPlay(op)
+        }, 40)
+      } else {
+        resetAutoplayState()
+      }
+    }
+    function submitConfig() {
+      //保存配置
+      document.querySelector("#config").style.display = "none"
+      var xsize = document.querySelector("#xsize").value
+      var ysize = document.querySelector("#ysize").value
+      if ((xsize <= 2 && ysize <= 2) || xsize <= 1 || ysize <= 1) {
+        toast("你设置的也太小了吧")
+        return
+      }
+      var autoPlayInterval = document.querySelector("#autoPlayInterval").value
+      localStorage.pintuConfig = JSON.stringify({
+        xsize,
+        ysize,
+        autoPlayInterval
+      })
+      toast("配置已生效")
+    }
+
+    function mounted() {
+      //启动应用，包括检查localStorage和URL两种情况
+      if (localStorage.pintuConfig) {
+        var pintuConfig = JSON.parse(localStorage.pintuConfig)
+        document.querySelector("#xsize").value = pintuConfig.xsize
+        document.querySelector("#ysize").value = pintuConfig.ysize
+        document.querySelector("#autoPlayInterval").value = pintuConfig.autoPlayInterval
+      }
+      const query = ui.getQuery()
+      if (query.hasOwnProperty("xsize")) {
+        document.querySelector("#xsize").value = parseInt(query["xsize"])
+        document.querySelector("#ysize").value = parseInt(query["ysize"])
+      }
+    }
+    //停止自动演示
+    function resetAutoplayState() {
+      var button = document.querySelector("#autoPlayButton")
+      button.innerHTML = "自动"
+      button.style.color = "black"
+      clearTimeout(autoPlayTimeout)
+      autoPlayTimeout = -1
+    }
+    //重玩当前游戏
+    function replay() {
+      resetAutoplayState()
+      a = util.copy(originGame)
+      init(a)
+      draw(a)
+    }
+    //把分享链接复制到剪贴板
+    function copyShareUrl() {
+      urlSpan.select()
+      document.execCommand("Copy", false, null)
+      toast("已复制到剪贴板！")
+      ui.display("#share", "none")
+    }
+    //分享游戏
+    function share() {
+      var urlSpan = document.querySelector("#urlSpan")
+      var link = document.createElement("a")
+      var xsize = document.querySelector("#xsize").value
+      var ysize = document.querySelector("#ysize").value
+      link.href = `?xsize=${xsize}&ysize=${ysize}&a=${util.flat(a).join(",")}`
+      urlSpan.value = link.href
+      ui.display("#share", "flex")
+    }
+    //开始新游戏
+    function startAnotherGame() {
+      resetAutoplayState()
+      a = newGame(false)
+      originGame = util.copy(a)
+      init(a)
+      draw(a)
+    }
+    function keyDown(e) {
+      var config = document.querySelector("#config")
+      var cover = document.querySelector("#cover")
+      if (config.style.display == "flex") {
+        //在“设置”对话框下按下enter键
+        if (event.keyCode == 13) {
+          submitConfig()
+          config.style.display = "none"
+        }
+      } else if (cover.style.display == "flex") {
+        //在“遮罩”对话框下按下enter键
+        if (event.keyCode == 13) {
+          startAnotherGame()
+          cover.style.display = "none"
+        }
+      } else {
+        var keyCodeIndex = [39, 37, 38, 40].indexOf(e.keyCode)
+        if (keyCodeIndex == -1) {
+          return
+        } else {
+          move(keyCodeIndex)
+        }
+      }
+    }
+
+    function bindEventListenerAccordingPlatform() {
+      if (/Android|webOS|iPhone|iPod|BlackBerry/i.test(navigator.userAgent)) {
+        document.querySelector("#table").addEventListener("touchstart", onMouseDown)
+        document.querySelector("#table").addEventListener("touchend", onMouseUp)
+        document.querySelector("#table").addEventListener("touchmove", onMouseMove)
+      } else {
+        document.querySelector("#table").onmousedown = onMouseDown
+        document.querySelector("#table").onmouseup = onMouseUp
+        document.querySelector("#table").onmousemove = onMouseMove
+      }
+    }
+    /** 鼠标按下*/
+    function onMouseDown(event) {
+      //如果不处于玩游戏状态，直接返回
+      if (!isPlaying()) return
+      event.preventDefault()
+      swipe = {
+        beginX: ui.getMousePosition(event).x,
+        beginY: ui.getMousePosition(event).y,
+        endX: ui.getMousePosition(event).x,
+        endY: ui.getMousePosition(event).y
+      }
+    }
+
+    /**鼠标移动事件*/
+    function onMouseMove(event) {
+      if (isPlaying() && swipe != null) {
+        swipe.endX = ui.getMousePosition(event).x
+        swipe.endY = ui.getMousePosition(event).y
+      }
+    }
+
+    /**鼠标抬起*/
+    function onMouseUp(event) {
+      event.preventDefault()
+      if (swipe == null) return
+      var ind = util.get_direction(swipe.endY - swipe.beginY, swipe.endX - swipe.beginX)
+      swipe = null
+      move(ind)
+    }
+    var autoPlayTimeout = -1
+    var swipe = null //鼠标扫动事件，应包含beginX,beginY,endX,endY四个属性
+    mounted()
+    bindEventListenerAccordingPlatform()
+    var a = newGame(true)
+    var originGame = util.copy(a) //用于重新玩
+    init(a)
+    draw(a)
+    window.onkeydown = keyDown
+    window.onresize = () => {
+      init(a)
+      draw(a)
+    }
+  </script>
+</html>
